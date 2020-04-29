@@ -13,7 +13,6 @@ const fixtureDir = path.resolve(
 suite('Extension Tests', () => {
   test('cargo tasks are auto-detected', async () => {
     const projectPath = fixtureDir;
-    const projectUri = Uri.file(projectPath);
     const projects = [
       path.join(projectPath, 'bare-lib-project'),
       path.join(projectPath, 'another-lib-project'),
@@ -28,7 +27,6 @@ suite('Extension Tests', () => {
       { subcommand: 'run', group: undefined },
     ];
 
-    await vscode.commands.executeCommand('vscode.openFolder', projectUri);
     const whenWorkspacesActive = projects.map(path => {
       const fsPath = Uri.file(path).fsPath;
       return whenWorkspaceActive(fsPath);
