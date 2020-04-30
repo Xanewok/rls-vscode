@@ -66,7 +66,7 @@ suite('Extension Tests', () => {
     // Wait until the second server is ready
     await Promise.race([whenWorkspacesActive[1]]);
     expect(await fetchBriefTasks()).to.include.deep.members(expected);
-  }).timeout(20000);
+  }).timeout(0);
 });
 
 /** Fetches current VSCode tasks' partial objects for ease of assertion */
