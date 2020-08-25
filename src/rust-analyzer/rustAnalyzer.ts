@@ -44,10 +44,6 @@ function installDir(): string | undefined {
   return undefined;
 }
 
-function ensureDir(path: string) {
-  return !!path && stat(path).catch(() => mkdir(path, { recursive: true }));
-}
-
 interface RustAnalyzerConfig {
   askBeforeDownload?: boolean;
   package: {
@@ -86,34 +82,39 @@ export async function getServer(
   const dir = installDir();
   if (!dir) {
     return;
+  } else {
+    await stat(dir).catch(() => mkdir(dir, { recursive: true }));
   }
-  await ensureDir(dir);
 
   const dest = path.join(dir, binaryName);
   const exists = await stat(dest).catch(() => false);
 
   if (!exists) {
-    await state.updateReleaseTag(undefined);
-  } else if (state.releaseTag === config.package.releaseTag) {
+    await state.updateInstalledRelease(undefined);
+  }
+
+  if (
+    state.installedRelease?.tag !== 'nightly' &&
+    state.installedRelease?.tag === config.package.releaseTag
+  ) {
     return dest;
   }
 
-  if (config.askBeforeDownload) {
-    const userResponse = await vs.window.showInformationMessage(
-      `${
-        state.releaseTag && state.releaseTag !== config.package.releaseTag
-          ? `You seem to have installed release \`${state.releaseTag}\` but requested a different one.`
-          : ''
-      }
-      Release \`${
-        config.package.releaseTag
-      }\` of rust-analyzer is not installed.\n
-      Install to ${dir}?`,
-      'Download',
-    );
-    if (userResponse !== 'Download') {
-      return dest;
-    }
+  const now = Date.now();
+  // Check if we should poll github api for the new nightly version
+  // if we haven't done it during the past hour
+  if (
+    state.installedRelease &&
+    state.installedRelease.tag === 'nightly' &&
+    config.package.releaseTag === 'nightly'
+  ) {
+    const lastCheck = state.lastCheck;
+
+    const anHour = 60 * 60 * 1000;
+    const shouldCheckForNewNightly =
+      state.installedRelease === undefined || now - (lastCheck ?? 0) > anHour;
+
+    if (!shouldCheckForNewNightly) return dest;
   }
 
   const release = await fetchRelease(
@@ -121,9 +122,33 @@ export async function getServer(
     'rust-analyzer',
     config.package.releaseTag,
   );
+
+  if (state.installedRelease?.id === release.id) {
+    return dest;
+  }
+
   const artifact = release.assets.find(asset => asset.name === binaryName);
   if (!artifact) {
     throw new Error(`Bad release: ${JSON.stringify(release)}`);
+  }
+
+  if (config.askBeforeDownload) {
+    const userResponse = await vs.window.showInformationMessage(
+      `${
+        state.installedRelease &&
+        state.installedRelease.tag !== config.package.releaseTag
+          ? `You seem to have installed release \`${state.installedRelease?.tag}\` but requested a different one.`
+          : ''
+      }
+      Release \`${config.package.releaseTag}\` of rust-analyzer ${
+        !!state.installedRelease ? 'is not installed' : 'can be updated'
+      }.\n
+      Install to ${dir}?`,
+      'Download',
+    );
+    if (userResponse !== 'Download') {
+      return dest;
+    }
   }
 
   await download({
@@ -133,7 +158,11 @@ export async function getServer(
     mode: 0o755,
   });
 
-  await state.updateReleaseTag(config.package.releaseTag);
+  await state.updateLastCheck(now);
+  await state.updateInstalledRelease({
+    id: release.id,
+    tag: config.package.releaseTag,
+  });
 
   return dest;
 }
